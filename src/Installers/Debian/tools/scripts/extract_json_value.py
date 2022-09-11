@@ -23,7 +23,7 @@ def help_and_exit(msg=None):
 	sys.exit(1)
 
 def parse_and_validate_args():
-	
+
 	if len(sys.argv) < 3:
 		help_and_exit(msg="Error: Invalid Args")
 
@@ -55,9 +55,7 @@ def extract_key(json_path, json_key):
 def execute():
 	json_path, json_key = parse_and_validate_args()
 
-	value = extract_key(json_path, json_key)
-
-	return value
+	return extract_key(json_path, json_key)
 
 if __name__ == "__main__":
 	print execute()

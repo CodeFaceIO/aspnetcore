@@ -71,8 +71,6 @@ def generate_man_page(tool_name, tool_data):
     return SECTION_SEPARATOR.join(sections)
 
 def generate_header_section(tool_name, tool_data):#
-    roff_text_builder = []
-
     header_format = ".TH {program_name} {section_number} {center_footer} {left_footer} {center_header}"
 
     today = datetime.date.today()
@@ -86,14 +84,10 @@ def generate_header_section(tool_name, tool_data):#
             "center_header" : ""    # Omitted
     }
 
-    roff_text_builder.append(header_format.format(**format_args))
-
+    roff_text_builder = [header_format.format(**format_args)]
     return SECTION_SEPARATOR.join(roff_text_builder)
 
 def generate_name_section(tool_name, tool_data):#
-    roff_text_builder = []
-    roff_text_builder.append(".SH NAME")
-
     tool_short_description = tool_data.get("short_description", "")
     name_format = ".B {program_name} - {short_description}"
 
@@ -102,14 +96,11 @@ def generate_name_section(tool_name, tool_data):#
             "short_description" : tool_short_description
     }
 
-    roff_text_builder.append(name_format.format(**name_format_args))
-
+    roff_text_builder = [".SH NAME", name_format.format(**name_format_args)]
     return SECTION_SEPARATOR.join(roff_text_builder)
 
 def generate_synopsis_section(tool_name, tool_data):#
-    roff_text_builder = []
-    roff_text_builder.append(".SH SYNOPSIS")
-
+    roff_text_builder = [".SH SYNOPSIS"]
     synopsis_format = '.B {program_name} {command_name} \n.RI {options} " "\n.I "{argument_list_name}"'
 
     tool_commands = tool_data.get("commands", [])
@@ -153,13 +144,9 @@ def generate_synopsis_section(tool_name, tool_data):#
     return SECTION_SEPARATOR.join(roff_text_builder)
 
 def generate_description_section(tool_name, tool_data):#
-    roff_text_builder = []
-    roff_text_builder.append(".SH DESCRIPTION")
-
     # Tool Description
     long_description = tool_data.get("long_description", "")
-    roff_text_builder.append(".PP {0}".format(long_description))
-
+    roff_text_builder = [".SH DESCRIPTION", ".PP {0}".format(long_description)]
     # Command Descriptions
     cmd_description_format = ".B {program_name} {command_name}\n{command_description}"
 
@@ -182,9 +169,7 @@ def generate_description_section(tool_name, tool_data):#
     return SECTION_SEPARATOR.join(roff_text_builder)
 
 def generate_options_section(tool_name, tool_data):#
-    roff_text_builder = []
-    roff_text_builder.append(".SH OPTIONS")
-
+    roff_text_builder = [".SH OPTIONS"]
     options_format = '.TP\n.B {option_specifiers}\n{option_description}'
 
     tool_commands = tool_data.get("commands", [])
@@ -218,31 +203,23 @@ def generate_options_section(tool_name, tool_data):#
     return SECTION_SEPARATOR.join(roff_text_builder)
 
 def generate_author_section(tool_name, tool_data):#
-    roff_text_builder = []
-    roff_text_builder.append(".SH AUTHOR")
-    
     author_format = '.B "{author_name}" " " \n.RI ( "{author_email}" )'
-    
+
     author_name = tool_data.get("author", "")
     author_email = tool_data.get("author_email", "")
-    
+
     format_args = {
         "author_name" : author_name,
         "author_email" : author_email
     }
-    
-    roff_text_builder.append(author_format.format(**format_args))
 
+    roff_text_builder = [".SH AUTHOR", author_format.format(**format_args)]
     return SECTION_SEPARATOR.join(roff_text_builder)
 
 def generate_copyright_section(tool_name, tool_data):#
-    roff_text_builder = []
-    roff_text_builder.append(".SH COPYRIGHT")
-    
     copyright_data = tool_data.get("copyright")
-    
-    roff_text_builder.append('.B "{0}"'.format(copyright_data))
 
+    roff_text_builder = [".SH COPYRIGHT", '.B "{0}"'.format(copyright_data)]
     return SECTION_SEPARATOR.join(roff_text_builder)
 
 def _option_string_helper(specifier_short, specifier_long, parameter, include_brackets = True, delimiter = " | "):
