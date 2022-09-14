@@ -82,7 +82,7 @@ def generate_changelog(config_data, template_dir, package_version=None, package_
     template = get_template(template_dir, FILE_CHANGELOG)
 
     release_data = config_data["release"]
-    
+
     # Allow for Version Override
     config_package_version = release_data["package_version"]
     package_version = package_version or config_package_version
@@ -99,9 +99,7 @@ def generate_changelog(config_data, template_dir, package_version=None, package_
         DATE=datetime.datetime.now(UTC()).strftime(CHANGELOG_DATE_FORMAT)
     )
 
-    contents = template.format(**template_dict)
-
-    return contents
+    return template.format(**template_dict)
 
 def generate_control(config_data, template_dir, package_name=None):
     template = get_template(template_dir, FILE_CONTROL)
@@ -113,7 +111,7 @@ def generate_control(config_data, template_dir, package_name=None):
     conflict_str = ', '.join(conflict_data)
 
     # Default to empty dict, so we don't explode on nested optional values
-    control_data = config_data.get("control", dict())
+    control_data = config_data.get("control", {})
 
     template_dict = dict(\
         SHORT_DESCRIPTION=config_data["short_description"],
@@ -132,9 +130,7 @@ def generate_control(config_data, template_dir, package_name=None):
         MAINTAINER_EMAIL=config_data["maintainer_email"]
     )
 
-    contents = template.format(**template_dict)
-
-    return contents
+    return template.format(**template_dict)
 
 def generate_copyright(config_data, template_dir):
     template = get_template(template_dir, FILE_COPYRIGHT)
@@ -147,21 +143,19 @@ def generate_copyright(config_data, template_dir):
         LICENSE_TEXT=license_data["full_text"]
     )
 
-    contents = template.format(**template_dict)
-
-    return contents
+    return template.format(**template_dict)
 
 def generate_symlinks(config_data, package_name=None):
     symlink_entries = []
     package_root_path = get_package_root(config_data, package_name=package_name)
 
-    symlink_data = config_data.get("symlinks", dict())
+    symlink_data = config_data.get("symlinks", {})
 
     for package_rel_path, symlink_path in symlink_data.iteritems():
 
         package_abs_path = os.path.join(package_root_path, package_rel_path)
 
-        symlink_entries.append( '%s %s' % (package_abs_path, symlink_path) )
+        symlink_entries.append(f'{package_abs_path} {symlink_path}')
 
     return '\n'.join(symlink_entries)
     
@@ -181,14 +175,14 @@ def get_dependendent_packages_string(debian_dependency_data):
         return ""
 
     dependencies = []
-        
+
     for debian_package_name in debian_dependency_data:
         dep_str = debian_package_name
 
         if debian_dependency_data[debian_package_name].get("package_version", None):
             debian_package_version = debian_dependency_data[debian_package_name].get("package_version")
 
-            dep_str += " (>= %s)" % debian_package_version
+            dep_str += f" (>= {debian_package_version})"
 
         dependencies.append(dep_str)
 
@@ -236,15 +230,8 @@ def parse_and_validate_args():
     config_path = sys.argv[1]
     template_dir = sys.argv[2]
     output_dir = sys.argv[3]
-    name_override = None
-    version_override = None
-    
-    if len(sys.argv) >= 5:
-        name_override = sys.argv[4]
-
-    if len(sys.argv) >= 6:
-        version_override = sys.argv[5]
-
+    name_override = sys.argv[4] if len(sys.argv) >= 5 else None
+    version_override = sys.argv[5] if len(sys.argv) >= 6 else None
     if not os.path.isfile(config_path):
         help_and_exit("Error: Invalid config file path")
 
