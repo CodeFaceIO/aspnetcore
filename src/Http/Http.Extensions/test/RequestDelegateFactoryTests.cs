@@ -4,7 +4,6 @@
 #nullable enable
 
 using System.Buffers;
-using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO.Pipelines;
 using System.Linq.Expressions;
@@ -35,7 +34,7 @@ using Moq;
 
 namespace Microsoft.AspNetCore.Routing.Internal;
 
-public class RequestDelegateFactoryTests : LoggedTest
+public partial class RequestDelegateFactoryTests : LoggedTest
 {
     public static IEnumerable<object[]> NoResult
     {
@@ -2634,6 +2633,24 @@ public class RequestDelegateFactoryTests : LoggedTest
         }
     }
 
+    [Fact]
+    public void BuildRequestDelegateThrowsNotSupportedExceptionForByRefParameters()
+    {
+        void OutMethod(out string foo) { foo = ""; }
+        void InMethod(in string foo) { }
+        void RefMethod(ref string foo) { }
+
+        var outParamException = Assert.Throws<NotSupportedException>(() => RequestDelegateFactory.Create(OutMethod));
+        var inParamException = Assert.Throws<NotSupportedException>(() => RequestDelegateFactory.Create(InMethod));
+        var refParamException = Assert.Throws<NotSupportedException>(() => RequestDelegateFactory.Create(RefMethod));
+
+        var typeName = typeof(string).MakeByRefType().Name;
+
+        Assert.Equal($"The by reference parameter 'out {typeName} foo' is not supported.", outParamException.Message);
+        Assert.Equal($"The by reference parameter 'in {typeName} foo' is not supported.", inParamException.Message);
+        Assert.Equal($"The by reference parameter 'ref {typeName} foo' is not supported.", refParamException.Message);
+    }
+
     [Theory]
     [MemberData(nameof(ImplicitFromServiceActions))]
     public async Task RequestDelegateRequiresServiceForAllImplicitFromServiceParameters(Delegate action)
@@ -2994,6 +3011,46 @@ public class RequestDelegateFactoryTests : LoggedTest
         Assert.NotNull(deserializedResponseBody);
         Assert.Equal("Write even more tests!", deserializedResponseBody!.Name);
         Assert.Equal("With type hierarchies!", deserializedResponseBody!.Child);
+    }
+
+    public static IEnumerable<object[]> JsonContextActions
+    {
+        get
+        {
+            return ComplexResult.Concat(ChildResult);
+        }
+    }
+
+    [JsonSerializable(typeof(Todo))]
+    [JsonSerializable(typeof(TodoChild))]
+    private partial class TestJsonContext : JsonSerializerContext
+    { }
+
+    [Theory]
+    [MemberData(nameof(JsonContextActions))]
+    public async Task RequestDelegateWritesAsJsonResponseBody_WithJsonSerializerContext(Delegate @delegate)
+    {
+        var httpContext = CreateHttpContext();
+        httpContext.RequestServices = new ServiceCollection()
+            .AddSingleton(LoggerFactory)
+            .ConfigureHttpJsonOptions(o => o.SerializerOptions.AddContext<TestJsonContext>())
+            .BuildServiceProvider();
+
+        var responseBodyStream = new MemoryStream();
+        httpContext.Response.Body = responseBodyStream;
+
+        var factoryResult = RequestDelegateFactory.Create(@delegate);
+        var requestDelegate = factoryResult.RequestDelegate;
+
+        await requestDelegate(httpContext);
+
+        var deserializedResponseBody = JsonSerializer.Deserialize<Todo>(responseBodyStream.ToArray(), new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        });
+
+        Assert.NotNull(deserializedResponseBody);
+        Assert.Equal("Write even more tests!", deserializedResponseBody!.Name);
     }
 
     public static IEnumerable<object[]> CustomResults
@@ -6015,7 +6072,7 @@ public class RequestDelegateFactoryTests : LoggedTest
     public void Create_DoesNotAddDelegateMethodInfo_AsMetadata()
     {
         // Arrange
-        var @delegate = () => "Hello";
+        var @delegate = () => { };
 
         // Act
         var result = RequestDelegateFactory.Create(@delegate);
@@ -6023,6 +6080,30 @@ public class RequestDelegateFactoryTests : LoggedTest
         // Assert
         // RouteHandlerEndpointDataSource adds the MethodInfo as the first item in RouteHandlerOptions.EndointMetadata
         Assert.Empty(result.EndpointMetadata);
+    }
+
+    [Fact]
+    public void Create_AddJsonResponseType_AsMetadata()
+    {
+        var @delegate = () => new object();
+        var result = RequestDelegateFactory.Create(@delegate);
+
+        var responseMetadata = Assert.IsAssignableFrom<IProducesResponseTypeMetadata>(Assert.Single(result.EndpointMetadata));
+
+        Assert.Equal("application/json", Assert.Single(responseMetadata.ContentTypes));
+        Assert.Equal(typeof(object), responseMetadata.Type);
+    }
+
+    [Fact]
+    public void Create_AddPlaintextResponseType_AsMetadata()
+    {
+        var @delegate = () => "Hello";
+        var result = RequestDelegateFactory.Create(@delegate);
+
+        var responseMetadata = Assert.IsAssignableFrom<IProducesResponseTypeMetadata>(Assert.Single(result.EndpointMetadata));
+
+        Assert.Equal("text/plain", Assert.Single(responseMetadata.ContentTypes));
+        Assert.Null(responseMetadata.Type);
     }
 
     [Fact]
@@ -6260,7 +6341,7 @@ public class RequestDelegateFactoryTests : LoggedTest
     public void Create_CombinesAllMetadata_InCorrectOrder()
     {
         // Arrange
-        var @delegate = [Attribute1, Attribute2] (AddsCustomParameterMetadata param1) => new CountsDefaultEndpointMetadataResult();
+        var @delegate = [Attribute1, Attribute2] (AddsCustomParameterMetadata param1) => new CountsDefaultEndpointMetadataPoco();
         var options = new RequestDelegateFactoryOptions
         {
             EndpointBuilder = CreateEndpointBuilder(new List<object>
@@ -6280,12 +6361,14 @@ public class RequestDelegateFactoryTests : LoggedTest
             m => Assert.True(m is CustomEndpointMetadata { Source: MetadataSource.Caller }),
             // Inferred AcceptsMetadata from RDF for complex type
             m => Assert.True(m is AcceptsMetadata am && am.RequestType == typeof(AddsCustomParameterMetadata)),
+            // Inferred ProducesResopnseTypeMetadata from RDF for complex type
+            m => Assert.Equal(typeof(CountsDefaultEndpointMetadataPoco), ((IProducesResponseTypeMetadata)m).Type),
             // Metadata provided by parameters implementing IEndpointParameterMetadataProvider
             m => Assert.True(m is ParameterNameMetadata { Name: "param1" }),
             // Metadata provided by parameters implementing IEndpointMetadataProvider
             m => Assert.True(m is CustomEndpointMetadata { Source: MetadataSource.Parameter }),
             // Metadata provided by return type implementing IEndpointMetadataProvider
-            m => Assert.True(m is MetadataCountMetadata { Count: 4 }));
+            m => Assert.True(m is MetadataCountMetadata { Count: 5 }));
     }
 
     [Fact]
@@ -6351,7 +6434,7 @@ public class RequestDelegateFactoryTests : LoggedTest
     public void InferMetadata_ThenCreate_CombinesAllMetadata_InCorrectOrder()
     {
         // Arrange
-        var @delegate = [Attribute1, Attribute2] (AddsCustomParameterMetadata param1) => new CountsDefaultEndpointMetadataResult();
+        var @delegate = [Attribute1, Attribute2] (AddsCustomParameterMetadata param1) => new CountsDefaultEndpointMetadataPoco();
         var options = new RequestDelegateFactoryOptions
         {
             EndpointBuilder = CreateEndpointBuilder(),
@@ -6366,12 +6449,14 @@ public class RequestDelegateFactoryTests : LoggedTest
         Assert.Collection(result.EndpointMetadata,
             // Inferred AcceptsMetadata from RDF for complex type
             m => Assert.True(m is AcceptsMetadata am && am.RequestType == typeof(AddsCustomParameterMetadata)),
+            // Inferred ProducesResopnseTypeMetadata from RDF for complex type
+            m => Assert.Equal(typeof(CountsDefaultEndpointMetadataPoco), ((IProducesResponseTypeMetadata)m).Type),
             // Metadata provided by parameters implementing IEndpointParameterMetadataProvider
             m => Assert.True(m is ParameterNameMetadata { Name: "param1" }),
             // Metadata provided by parameters implementing IEndpointMetadataProvider
             m => Assert.True(m is CustomEndpointMetadata { Source: MetadataSource.Parameter }),
             // Metadata provided by return type implementing IEndpointMetadataProvider
-            m => Assert.True(m is MetadataCountMetadata { Count: 3 }),
+            m => Assert.True(m is MetadataCountMetadata { Count: 4 }),
             // Entry-specific metadata added after a call to InferMetadata
             m => Assert.True(m is CustomEndpointMetadata { Source: MetadataSource.Caller }));
     }
@@ -6615,6 +6700,15 @@ public class RequestDelegateFactoryTests : LoggedTest
         }
 
         public Task ExecuteAsync(HttpContext httpContext) => Task.CompletedTask;
+    }
+
+    private class CountsDefaultEndpointMetadataPoco : IEndpointMetadataProvider
+    {
+        public static void PopulateMetadata(MethodInfo method, EndpointBuilder builder)
+        {
+            var currentMetadataCount = builder.Metadata.Count;
+            builder.Metadata.Add(new MetadataCountMetadata { Count = currentMetadataCount });
+        }
     }
 
     private class RemovesAcceptsParameterMetadata : IEndpointParameterMetadataProvider
